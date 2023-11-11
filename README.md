@@ -342,3 +342,265 @@ freshly built CLI from there.
 >       dagger devel () (registry.dagger.io/engine) linux/amd64
 ```
 
+
+## Checking what we have so far
+
+So, after `./hack/dev` we were left with a binary built out of our local source
+code, and two containers running dagger in our docker engine, but then I got
+rid of the old one, leaving just the one named `dagger.engine`:
+
+```
+        $ docker ps -a
+        ID   IMAGE                                COMMAND                  NAMES
+>       cb3  localhost/dagger-engine.dev:latest   "dagger-entrypoint.s…"   dagger-engine.dev
+```
+
+But, what's going on in that container? first we can check the definition of
+the container itself to get some idea of how it's setup (maybe it gives us some
+hints about whether it's using the host daemon or if this is some
+"docker-in-docker"-a-like setup - more like "buildkit+runc in docker" i'd
+guess)
+
+```
+        ---
+        - Id: cb35846c5782ea62668c3a2bab42008880eb306c0b57465867906e37453041b5
+          Path: dagger-entrypoint.sh
+          Args: [ "--debug" ]
+          HostConfig:
+> 1         Binds: [ "dagger-engine.dev:/var/lib/dagger" ]
+            NetworkMode: default
+            PortBindings: {}
+> 2         Privileged: true
+> 3         PublishAllPorts: false
+          Mounts:
+          - Type: volume
+            Name: dagger-engine.dev
+            Source: "/var/lib/docker/volumes/dagger-engine.dev/_data"
+            Destination: "/var/lib/dagger"
+          Config:
+            Env:
+> 4         - _EXPERIMENTAL_DAGGER_CLOUD_TOKEN
+>           - _EXPERIMENTAL_DAGGER_CLOUD_URL
+>           - _EXPERIMENTAL_DAGGER_GPU_SUPPORT
+>           - _EXPERIMENTAL_DAGGER_CACHE_CONFIG
+>           Image: localhost/dagger-engine.dev:latest
+          NetworkSettings:
+> 5         Networks: {bridge: {IPAddress: 172.17.0.3}}
+```
+
+from the config, we can infer a couple things:
+
+1. we're having a named volume mounted at `/var/lib/dagger`, it'd be
+   interesting to see later on what's put in there
+
+2. running the container in privileged mode (my guess is due to the fact that
+   we're also running buildkit inside?)
+
+3. we're not automatically publishing ports exposed via EXPOSE to the host
+
+4. some environment variables seem to be toggling feature flags
+
+5. plain standard bridge networking being utilized
+
+we can also notice that the container has `dnsmasq` running alongside the
+engine:
+
+```
+        $ docker exec -it dagger-engine.dev ps aux
+
+        PID   USER     COMMAND
+          1   root     /usr/local/bin/dagger-engine \
+                         --config /etc/dagger/engine.toml --debug
+>        33   root     /usr/sbin/dnsmasq --keep-in-foreground \
+>                        --log-facility=- --log-debug -u root \
+>                        --conf-file=/var/run/containers/cni/dnsname/dagger/dnsmasq.con
+```
+
+and that we *don't* see `buildkitd` in there (could it be that it's bringing it
+up in a "daemonless" fashion? we'll see).
+
+I think for now I'm good with stopping here in terms of going more in-depth
+into the building process and instead focusing on the tutorials/guides to learn
+more about how this all works in the background. let's go!
+
+
+## quick start
+
+from a high-level, it seems like dagger works as such:
+
+```
+
+definition of my pipeline using
+the Go dagger sdk                       materialization of the
+    '                                       executions
+    '                                           '
+    '                    (container)            '
+    '          .-----dagger-engine.dev?---------+--------.
+    '          |                                '        |
+  .....        |       .............       ...........   |
+  CI.GO ---GRAPHQL---> DAGGER-ENGINE ----> OCI RUNTIME   |
+  .....        |       .............       ...........   |
+               |            '                            |
+               '------------+----------------------------'
+                            '
+                      computer llb,
+                  tells buildkit to solve?
+
+```
+
+let's move on an see how much more detail we can add to this (pretty sure
+there's much more to it) - onto setting up a small sample!
+
+
+## sample
+
+setting up a sample, the first surprise is that my hypothesis that we'd be able
+to actually just go ahead and use our new container seems to be .. wrong - we
+end up getting a fresh new one:
+
+```
+        $ go run main.go
+
+>       Creating new Engine session... OK!
+>       Establishing connection to Engine... 1: connect
+        1: > in init
+        1: starting engine
+
+
+"""
+wut? i thought we'd use the 'dagger-engine.dev' 
+container, but, i guess not?
+"""
+```
+
+perhaps to "fix" this we can instead have those environment variables that we
+had seen before in the `hack/dev` script to force the sdk (through our client)
+to connect to the right one and not try to initialize a new engine.
+
+so, here I proceed to remove that old container
+
+```
+docker rm -f dagger-engine-7b45c2238c1141a1
+```
+
+then run with the environment variable set
+
+
+```
+_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev go run ./main.go
+```
+
+and indeed! no more re-initialization, and we can rely on that single engine
+that we had built - sweet!
+
+something that's important to note is that in the `hack/dev` script we also saw
+another environment variable set: `_EXPERIMENTAL_DAGGER_CLI_BIN`.
+
+to figure out why that'd be needed in the first place, a good approach is to
+trace all the `execve`s that are happening across the system so that we could
+perhaps discover is we have a separate `dagger` cli being used that is not the
+one we just built (thus, making the case for having the environment variable
+pointing at our build).
+
+using `bcc`'s execsnoopvis, we have our answer - `dagger` is somehow spinning a
+different binary for ... "some reason".
+
+
+```
+"""
+huh, so, there's some magic here! `dagger session` seems to be a hidden
+command that the cli has to ... perhaps act as a bridge to something?
+we'll see later
+"""
+
+
+        $ sudo ./execsnoop.py
+        PCOMM            PID     PPID    RET ARGS
+        go               703968  686918    0 /usr/local/go/bin/go run main.go
+        ...
+        main             704119  703968    0 /tmp/go-build2805719434/b001/exe/main
+>       dagger-0.9.3     704126  704119    0 /home/cirocosta/.cache/dagger/dagger-0.9.3 \
+>                                               session \
+>                                                 --label dagger.io/sdk.name:go \
+>                                                 --label dagger.io/sdk.version:0.9.3
+        ...
+```
+
+so, yes, that environment variable apparently is very important - having it
+set, we can see that indeed, we have dagger leveraging the binary we've just
+built:
+
+```
+"""
+yay, using our binary!
+"""
+
+        go               705596  705595    0 /usr/local/go/bin/go run ./main.go
+        main             705762  705596    0 /tmp/go-build1313601040/b001/exe/main
+>       dagger           705769  705762    0 /home/cirocosta/dev/cirocosta/dagger/bin/dagger \
+>                                               session \
+>                                                   --label dagger.io/sdk.name:go \
+>                                                   --label dagger.io/sdk.version:0.9.3
+```
+
+so ok, it seems like our high-level view of the system was really missing
+something - this `dagger session` seems to be something that is actually in
+between the engine and our client. so, let's figure out how that works.
+
+
+## the dagger session thing
+
+When the Go SDK tries to establish the connection, it brings brings up `dagger
+session` process inheriting the environment from the execution of our sample
+(so that, e.g., `..._RUNNER_HOST` env var gets passed through to `dagger
+session`). 
+
+With the session process being up, it then gets back from `dagger session`
+the port in which `dagger session` has a tcp socket waiting for connections to
+proxy through itself to the `dagger engine` running in the container.
+
+
+```
+
+  go run main.go
+
+     ----> brings up `dagger session`
+                         |
+                         |
+                  listens on ephemeral port
+                         |
+     <-------------------'
+            tells `go run` what
+          that port is and a session token
+
+
+    ...
+
+
+    `main.go` (Go client sdk)  makes HTTP requests to `dagger session`'s HTTP
+    server that is proxying those to the dagger engine indicated by 
+    _EXPERIMENTAL_DAGGER_RUNNER_HOST.
+    
+
+               (uuid 'token' as basic auth)
+               (looback+port from dagsess)
+                          '
+                          '
+  go run main.go    ----HTTP---> dagger session --HTTP?--> dagger engine
+
+                   (graphql)                  (graphql?)
+
+
+```
+
+ps.: interestingly, because our `DAGGER_RUNNER_HOST` env var indicates a
+container (`docker-container://dagger-engine.dev`), when `dagger session` is
+creating a buildkit client it is able to connect to a buildkit inside the
+docker container using `docker exec -i ... buildctl dial-stdio`, which is
+essentially providing a stdio-based proxy to connecting to the daemon.
+
+so ... soo .... sooo .... `dagger-engine` is actually a "fork" of `buildkit`,
+and `dagger session` is where all the magic of graphql etc takes place? i'm
+probably too confused now hahah
+
+
