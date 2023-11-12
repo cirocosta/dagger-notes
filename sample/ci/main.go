@@ -33,7 +33,7 @@ func vet(ctx context.Context, container *dagger.Container) error {
 	return nil
 }
 
-func build(ctx context.Context, container *dagger.Container) error {
+func binary(ctx context.Context, container *dagger.Container) error {
 	_, err := container.
 		WithExec(argv("go build -o ./out/sample")).
 		Directory("./out").
@@ -64,7 +64,7 @@ func runPipeline(ctx context.Context, client *dagger.Client) error {
 	})
 
 	g.Go(func() error {
-		return build(ctx, containerWithSourceCode)
+		return binary(ctx, containerWithSourceCode)
 	})
 
 	return g.Wait()

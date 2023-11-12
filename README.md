@@ -672,11 +672,11 @@ proxy through itself to the `dagger engine` running in the container.
 
 ```
 
-ps.: interestingly, because our `DAGGER_RUNNER_HOST` env var indicates a
-container (`docker-container://dagger-engine.dev`), when `dagger session` is
-creating a buildkit client it is able to connect to a buildkit inside the
-docker container using `docker exec -i ... buildctl dial-stdio`, which is
-essentially providing a stdio-based proxy to connecting to the daemon.
+interestingly, because our `DAGGER_RUNNER_HOST` env var indicates a container
+(`docker-container://dagger-engine.dev`), when `dagger session` is creating a
+buildkit client it is able to connect to a buildkit inside the docker container
+using `docker exec -i ... buildctl dial-stdio`, which is essentially providing
+a stdio-based proxy to connecting to the daemon.
 
 so ... soo .... sooo .... `dagger-engine` is actually a "fork" of `buildkit`,
 and `dagger session` is where all the magic of graphql etc takes place? i'm
@@ -793,3 +793,22 @@ but ... what's this `http://dagger/query` magic? as in, how are we resolving
 
 also, we now found where we're generating the query, but, how about where we're
 *handling* the query? seems like it's all under `core/schema/handler.go`
+
+
+
+## a pipeline
+
+```mermaid
+flowchart TD
+    
+    source --> scan
+    source --> test
+    source --> lint
+
+    source --> image
+    image --> scan-image
+    
+    image --> e2e-test
+    e2e-test --> publish
+```
+
