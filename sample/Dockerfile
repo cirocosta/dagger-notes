@@ -8,7 +8,7 @@ FROM $BUILDER_IMAGE as builder
         COPY . .
 
         RUN set -x && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on \
-                go build -a -v \
+                go build -a \
 			-trimpath \
 			-tags osusergo,netgo,static_build \
 			-o sample \
