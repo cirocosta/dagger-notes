@@ -5,21 +5,20 @@ import (
 	"fmt"
 
 	"dagger.io/dagger"
-	"golang.org/x/sync/errgroup"
 )
 
-func sync(ctx context.Context, containers []*dagger.Container) error {
-	g, ctx := errgroup.WithContext(ctx)
-	for _, container := range containers {
-		container := container
+func runPipelines(ctx context.Context, client *dagger.Client) error {
+	pipeline := client.Pipeline("sample")
 
-		g.Go(func() error {
-			_, err := container.Sync(ctx)
-			return err
-		})
+	if err := runChecks(ctx, pipeline.Pipeline("checks")); err != nil {
+		return fmt.Errorf("checks: %w", err)
 	}
 
-	return g.Wait()
+	if err := runBuilds(ctx, pipeline.Pipeline("builds")); err != nil {
+		return fmt.Errorf("builds: %w", err)
+	}
+
+	return nil
 }
 
 func runChecks(ctx context.Context, client *dagger.Client) error {
@@ -27,10 +26,8 @@ func runChecks(ctx context.Context, client *dagger.Client) error {
 	golangRunner := golangContainer(client)
 
 	if err := sync(ctx,
-		[]*dagger.Container{
-			test(golangRunner, sourceDir),
-			vet(golangRunner, sourceDir),
-		},
+		test(golangRunner, sourceDir),
+		vet(golangRunner, sourceDir),
 	); err != nil {
 		return err
 	}
@@ -41,23 +38,16 @@ func runChecks(ctx context.Context, client *dagger.Client) error {
 func runBuilds(ctx context.Context, client *dagger.Client) error {
 	sourceDir := sourceDirectory(client)
 
-	_, err := image(ctx, sourceDir)
+	imageRef, err := image(ctx, sourceDir)
 	if err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func runPipeline(ctx context.Context, client *dagger.Client) error {
-	pipeline := client.Pipeline("sample")
-
-	if err := runChecks(ctx, pipeline.Pipeline("checks")); err != nil {
-		return fmt.Errorf("checks: %w", err)
-	}
-
-	if err := runBuilds(ctx, pipeline.Pipeline("builds")); err != nil {
-		return fmt.Errorf("builds: %w", err)
+	imageScanRunner := scannerContainer(client)
+	if err := sync(ctx,
+		scanImage(imageScanRunner, imageRef),
+	); err != nil {
+		return err
 	}
 
 	return nil

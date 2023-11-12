@@ -45,7 +45,7 @@ func image(ctx context.Context, source *dagger.Directory) (string, error) {
 // scanImage scans a container image.
 func scanImage(scanner *dagger.Container, ref string) *dagger.Container {
 	return scanner.
-		WithExec(argv("trivy image " + ref))
+		WithExec(argv("image " + ref))
 }
 
 // binary builds the application binary

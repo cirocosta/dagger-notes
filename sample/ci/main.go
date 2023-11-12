@@ -19,7 +19,7 @@ func run(ctx context.Context) error {
 
 	defer client.Close()
 
-	return runPipeline(ctx, client)
+	return runPipelines(ctx, client)
 }
 
 func main() {
