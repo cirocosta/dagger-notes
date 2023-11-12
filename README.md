@@ -737,10 +737,12 @@ not sure.
 
 ## can we "see" the graphql?
 
-soo, I know that somehow the client is sending a graphql somewhere (my guess,
-the `dagger session`), but, can we get to intercept that somehow? 
+soo, I know that somehow the client is sending graphql queries somewhere (my
+guess, the `dagger session`, which is then proxying to the engine), but, can we
+get to intercept that somehow? 
 
-well, we can tell that the generation of the graphql query itself is being performed in here:
+well, we can tell that the generation of the graphql query itself is being
+performed in here in the client:
 
 ```
 > dagger.io/dagger/querybuilder.(*Selection).Execute() /home/cirocosta/go/pkg/mod/dagger.io/dagger@v0.9.3/querybuilder/querybuilder.go:152 (PC: 0x8ae98e)
@@ -788,27 +790,24 @@ where it then right after submits the request
           ...
 ```
 
-but ... what's this `http://dagger/query` magic? as in, how are we resolving
-`dagger`?
+so, it seems like we know a place where this is being submitted.
 
-also, we now found where we're generating the query, but, how about where we're
-*handling* the query? seems like it's all under `core/schema/handler.go`
+given that we must have a graphql server *somewhere* and we know `/query` is
+the endpoint (interesting choice, not `/graphql`), we can look for where in the code we have:
+
+1. http servers being setup
+2. where we register a handler for `/query`
+
+looking around, indeed, we can see under the `./core` package that there's
+quite a bit of logic for handling the construction of a graphql schema and some
+setup for resolvers...  not trivial to figure out, but we have a good clue
+where that is.
+
+i'll explore that further later on, but, my current guess:
+
+- `engine` is not "just" a buildkitd wrapper, but more of a full on
+  "graphql-to-llb" service that gets requests from `dagger session` and "makes
+  the pipelines happen"
 
 
-
-## a pipeline
-
-```mermaid
-flowchart TD
-    
-    source --> scan
-    source --> test
-    source --> lint
-
-    source --> image
-    image --> scan-image
-    
-    image --> e2e-test
-    e2e-test --> publish
-```
-
+i'll definitely explore that later, time to play with actual pipelines.
