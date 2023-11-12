@@ -76,10 +76,11 @@ First, clone the repo then get there, then let's see how we can get this built.
 
 ```
 
-Looking around (I know, I know, RTFM, ciro!), `./install.sh` looked really
-promising but it seems like it's more for having a clean install *without*
-getting the binaries built locally - the script looks pretty solid with a nice
-simple `execute()` function that gets invoked as the entrypoint
+Looking around (I know, I know, RTFM, ciro!),
+[`./install.sh`](https://github.com/dagger/dagger/blob/9ba00b59ddd6a15346408d98717614b93956161a/install.sh)
+looked really promising but it seems like it's more for having a clean install
+*without* getting the binaries built locally - the script looks pretty solid
+with a nice simple `execute()` function that gets invoked as the entrypoint
 
 ```
 
@@ -109,8 +110,9 @@ neat neat
         execute
 ```
 
-easy to read - gj! - but, not what I'm looking for. `./hack` looks like what we
-actually want: some scripts for building from scratch.
+easy to read - gj! - but, not what I'm looking for.
+[`./hack`](https://github.com/dagger/dagger/tree/9ba00b59ddd6a15346408d98717614b93956161a/hack)
+looks like what we actually want: some scripts for building from scratch.
 
 
 ```
@@ -134,7 +136,7 @@ but let's read the manual.
 Looking at the root `README.md`, it indeed points out (at the end) that I
 should read the manual for what I'm trying to do (`./CONTRIBUTING.md`).
 
-*ps.: it turns out that `hack/README.md` was also a thing and yes, I completely
+***ps. from the future**: it turns out that `hack/README.md` was also a thing and yes, I completely
 overlooked it. it turns out that there are several `README.md` files across the
 repository, which I only got to find later on.*
 
@@ -250,6 +252,10 @@ image:
 sounds more like a connectivity issue (given the EOF on a simple HEAD request),
 and yeah, we can confirm the tag is sane:
 
+***ps. from the future**: it turns out that, yep, dockerhub was having a hard time
+(https://www.dockerstatus.com/), but apparently a great mirror for `library/`
+is to go straight to ECR, e.g. public.ecr.aws/docker/library/golang*
+
 ```
 
 """
@@ -335,10 +341,12 @@ caching makes this sufferable!
 
 ```
 
-a couple runs later, we're good to go! despite the annoyance of the registry
-acting oddly, it turns out that this was a great way of showcasing how being
-able to rely hard on the caching makes the experience "ok" as you can just
-re-run and not have time being wasted on the intermediary steps.
+a couple runs later, we're good to go! 
+
+despite the annoyance of the registry acting all odd, it turns out that this
+was a great way of showcasing how being able to rely hard on the caching makes
+the experience "ok" as you can just re-run and not have time being wasted on
+the intermediary steps. neat.
 
 ## It's up!
 
@@ -385,8 +393,10 @@ freshly built CLI from there.
 ## Checking what we have so far
 
 So, after `./hack/dev` we were left with a binary built out of our local source
-code, and two containers running dagger in our docker engine, but then I got
-rid of the old one, leaving just the one named `dagger.engine`:
+code (as well as an `engine.tar` containing the image that can be loaded into
+docker for running the engine), and two containers running dagger in our docker
+engine, but then I got rid of the old one, leaving just the one named
+`dagger.engine`:
 
 ```
         $ docker ps -a
@@ -432,14 +442,34 @@ from the config, we can infer a couple things:
 1. we're having a named volume mounted at `/var/lib/dagger`, it'd be
    interesting to see later on what's put in there
 
+    - my guess is that this is work around the differences of how the filesystems
+    are set for ephemeral storage and volumes (faster for volumes)
+
+
 2. running the container in privileged mode (my guess is due to the fact that
    we're also running buildkit inside?)
 
+    - yep, we can check that later but indeed, that's why
+
+
 3. we're not automatically publishing ports exposed via EXPOSE to the host
 
-4. some environment variables seem to be toggling feature flags
+    - we'll expand on that later, but, yes, we're able to avoid having to deal
+    with port forwardings here given how dagger (more specifically the buildkit
+    client) is able to use `docker exec`'s on `buildctl` to communicate with the
+    buildkit daemon through that "transport"
+
+
+4. some environment variables seem to be toggling feature flags?
 
 5. plain standard bridge networking being utilized
+
+6. *lack of* any binds to the host's docker/containerd/buildkit
+
+    - well, as we see later, it's really not necessarily as buildkit is ran
+    inside that dagger-engine container
+
+
 
 we can also notice that the container has `dnsmasq` running alongside the
 engine:
@@ -457,6 +487,10 @@ engine:
 
 and that we *don't* see `buildkitd` in there (could it be that it's bringing it
 up in a "daemonless" fashion? we'll see).
+
+***ps. from the future**: no, it's not doing a "daemonless" setup - that
+`dagger-engine` binary turns out to be some form of wrapper around buildkitd
+itself, running there as a daemon*
 
 I think for now I'm good with stopping here in terms of going more in-depth
 into the building process and instead focusing on the tutorials/guides to learn
@@ -486,6 +520,12 @@ the Go dagger sdk                       materialization of the
                   tells buildkit to solve?
 
 ```
+
+
+***ps. from the future**: this is not a full picture, like, really not a full
+picture, and no, we're not sending graphql queries directly to the engine, the
+engine is more like worker that will be doing not much more than running things
+(and dealing with storage too)*
 
 let's move on an see how much more detail we can add to this (pretty sure
 there's much more to it) - onto setting up a small sample!
