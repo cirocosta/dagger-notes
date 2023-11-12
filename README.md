@@ -37,7 +37,17 @@ Docker version 24.0.7, build afdd53b
 
 ## Building dagger
 
-### Cloning then looking around
+The goal here is to get up an running with a dev build so that we can tinker
+with it modifying the code here and there to better understand the internals,
+thus:
+
+- clone the repo
+- run some build scripts
+- start "the engine"/anything else needed
+- get a sample running
+
+
+### Cloning, then looking around
 
 I know it's usually more useful to just go grab the binaries and get started
 that way, but, I really want to be able to tinker with this, so, let's try a
@@ -46,8 +56,24 @@ dev build and see how far we get.
 First, clone the repo then get there, then let's see how we can get this built.
 
 ```console
-$ git clone https://github.com/dagger/dagger
-$ cd dagger
+        $ git clone https://github.com/dagger/dagger
+        $ cd dagger
+
+        $ tree -L 1
+        .
+        ├── auth
+        ├── CODE_OF_CONDUCT.md
+>       ├── CONTRIBUTING.md
+        ├── core
+        ├── Dockerfile
+        ...
+        ├── go.sum
+>       ├── hack
+        ├── helm
+>       ├── install.sh
+        ├── internal
+        ...
+
 ```
 
 Looking around (I know, I know, RTFM, ciro!), `./install.sh` looked really
@@ -64,27 +90,27 @@ neat neat
 """
 
 
-      execute() {
-      ...
-          log_debug "downloading files into ${tmpdir}"
->         http_download "${tmpdir}/${tarball}" "${tarball_url}"
->         http_download "${tmpdir}/${checksum}" "${checksum_url}"
-          hash_sha256_verify "${tmpdir}/${tarball}" "${tmpdir}/${checksum}"
-          srcdir="${tmpdir}"
-          (cd "${tmpdir}" && untar "${tarball}")
-          test ! -d "${bin_dir}" && install -d "${bin_dir}"
->         install "${srcdir}/${binexe}" "${bin_dir}"
-          log_debug "display shell completion instructions"
->         install_shell_completion
-          log_info "installed ${bin_dir}/${binexe}"
-          rm -rf "${tmpdir}"
-      }
+        execute() {
+        ...
+            log_debug "downloading files into ${tmpdir}"
+>           http_download "${tmpdir}/${tarball}" "${tarball_url}"
+>           http_download "${tmpdir}/${checksum}" "${checksum_url}"
+            hash_sha256_verify "${tmpdir}/${tarball}" "${tmpdir}/${checksum}"
+            srcdir="${tmpdir}"
+            (cd "${tmpdir}" && untar "${tarball}")
+            test ! -d "${bin_dir}" && install -d "${bin_dir}"
+>           install "${srcdir}/${binexe}" "${bin_dir}"
+            log_debug "display shell completion instructions"
+>           install_shell_completion
+            log_info "installed ${bin_dir}/${binexe}"
+            rm -rf "${tmpdir}"
+        }
 
-      execute
+        execute
 ```
 
-easy to read - gj! (but, not what I'm looking for). `./hack` looks like is what
-I'm looking for
+easy to read - gj! - but, not what I'm looking for. `./hack` looks like what we
+actually want: some scripts for building from scratch.
 
 
 ```
@@ -94,29 +120,40 @@ to get things built from scratch
 """
 
 
-    $ tree -L 1 -C ./hack
-
-    ./hack
->   ├── dev
-    ├── make
-    ├── README.md
-    └── with-dev
+        $ tree -L 1 -C ./hack
+        
+        ./hack
+>       ├── dev
+        ├── make
+        ├── README.md
+        └── with-dev
 ```
 
 but let's read the manual.
 
-Looking at the README.md, it indeed points out (at the end) that I should read
-the manual for what I'm trying to do (`./CONTRIBUTING.md`).
+Looking at the root `README.md`, it indeed points out (at the end) that I
+should read the manual for what I'm trying to do (`./CONTRIBUTING.md`).
+
+*ps.: it turns out that `hack/README.md` was also a thing and yes, I completely
+overlooked it. it turns out that there are several `README.md` files across the
+repository, which I only got to find later on.*
+
 
 
 ### Going through CONTRIBUTING.md
 
-"how to run a development engine" - there we go! indeed, `./hack/dev` gives us
-what we want.
+["how to run a development
+engine"](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md#how-to-run-a-development-engine),
+there we go! indeed,
+[`./hack/dev`](https://github.com/dagger/dagger/blob/9ba00b59ddd6a15346408d98717614b93956161a/hack/dev)
+gives us what we want. perhaps a quick contribution here is to let people know
+about that `hack/README.md` file too.
 
 first thing that catches my attention is that ... well, they're not using
-Makefiles, but instead, `mage`, which yeah, makes sense given the approach of,
-e.g., writing a pipeline using Go - why not the build scripts too?
+`Makefile`s, but instead, [`mage`](https://github.com/magefile/mage), which
+yeah, makes sense given the approach of, e.g., writing a pipeline using Go -
+why not the build scripts too?
+
 
 ```
 """
@@ -141,13 +178,14 @@ there
 """
 rest seems unrelated to what I'm trying to achieve
 as I'll be running just `./hack/dev` with no further positional
-arguments so those exports and eval don't really matter
+arguments so those exports and eval don't really matter?
 """
 
 ```
 
-looking at the mage file for `engine:dev`, it looks a little magical that this
-will "just work"? 
+looking at the mage file that implements
+[`engine:dev`](https://github.com/dagger/dagger/blob/9ba00b59ddd6a15346408d98717614b93956161a/internal/mage/engine.go#L223),
+it looks a little magical that this will "just work"? 
 
 
 ```
@@ -181,7 +219,8 @@ CONTAINER ID   IMAGE                              COMMAND                  CREAT
 3e11b4997a9d   registry.dagger.io/engine:v0.9.3   "dagger-entrypoint.s…"   12 seconds ago   Up 10 seconds             dagger-engine-7b45c2238c1141a1
 ```
 
-this makes me think that we're using a stable build (0.9.3) to use as the
+this makes me think that we're using a stable build
+([0.9.3](https://github.com/dagger/dagger/releases/tag/v0.9.3)) to use as the
 bootstrapping of dev builds so that we can do dogfooding from very early on in
 the dev cycle of the team (great!)
 
@@ -604,3 +643,113 @@ and `dagger session` is where all the magic of graphql etc takes place? i'm
 probably too confused now hahah
 
 
+## back to the container
+
+now with the realization that `dagger-engine` is actually running a buildkit
+inside that container (`dagger-engine` seems to pretty much be a wrapped
+`buildkitd`), it all makes sense! we're not running a "daemonless" setup! it
+also makes sense that we're able to `buildctl dial-stdio` given that indeed, we
+have a daemon to connect to!
+
+```
+"""
+huH! look at that `buildkitd` name there 
+(as opposed to `dagger-engine`)
+"""
+
+        $ docker exec dagger-engine.dev dagger-engine --help
+        NAME:
+>          buildkitd - build daemon
+
+        USAGE:
+           dagger-engine [global options] command [command options] [arguments...]
+```
+
+soo, ok, whenever we have a pipeline to execute, our client will make requests
+to the `dagger session` that it brought up, that session then connects to a
+runner host (buildkit - dagger-engine) that's running in the container, which
+in this scenario (`docker-container://`-based runner) it means having that
+"connection" established via `docker exec` meaning that we don't need to have
+any port forwarding taking place (and should would pretty well across platforms
+I guess).
+
+I got to look at the dnsmasq conf, but i'm still not sure why dnsmasq is needed there:
+
+```
+        $ docker exec dagger-engine.dev cat /var/run/containers/cni/dnsname/dagger/dnsmasq.conf
+
+        strict-order
+>       local=/dagger.local/
+>       domain=dagger.local
+        domain-needed
+        expand-hosts
+        pid-file=/var/run/containers/cni/dnsname/dagger/pidfile
+        except-interface=lo
+        no-hosts
+        interface=dagger0
+        addn-hosts=/var/run/containers/cni/dnsname/dagger/addnhosts
+        resolv-file=/etc/dnsmasq-resolv.conf
+```
+
+my guess is that it's probably related to some services functionality later on?
+not sure.
+
+
+## can we "see" the graphql?
+
+soo, I know that somehow the client is sending a graphql somewhere (my guess,
+the `dagger session`), but, can we get to intercept that somehow? 
+
+well, we can tell that the generation of the graphql query itself is being performed in here:
+
+```
+> dagger.io/dagger/querybuilder.(*Selection).Execute() /home/cirocosta/go/pkg/mod/dagger.io/dagger@v0.9.3/querybuilder/querybuilder.go:152 (PC: 0x8ae98e)
+   147:         return nil
+   148: }
+   149:
+   150: func (s *Selection) Execute(ctx context.Context, c graphql.Client) error {
+   151:         query, err := s.Build(ctx)
+=> 152:         if err != nil {
+   153:                 return err
+   154:         }
+   155:
+   156:         var response any
+   157:         err = c.MakeRequest(ctx,
+
+(dlv) p query
+"query{container{from(address:\"golang:1.19\"){withExec(args:[\"go\",\"version\"]){stdout}}}}"
+```
+
+where it then right after submits the request
+
+```
+        > github.com/Khan/genqlient/graphql.(*client).MakeRequest()
+           146:         if err != nil {
+           147:                 return err
+           149:         httpReq.Header.Set("Content-Type", "application/json")
+           150:
+        => 151:         if ctx != nil {
+           152:                 httpReq = httpReq.WithContext(ctx)
+           153:         }
+           154:
+
+        (dlv) p httpReq
+        ("*net/http.Request")(0xc0001e6100)
+        *net/http.Request {
+                Method: "POST",
+                URL: *net/url.URL {
+>                       Scheme: "http",
+                        Opaque: "",
+                        User: *net/url.Userinfo nil,
+>                       Host: "dagger",
+>                       Path: "/query",
+                        RawPath: "",
+                        OmitHost: false,
+          ...
+```
+
+but ... what's this `http://dagger/query` magic? as in, how are we resolving
+`dagger`?
+
+also, we now found where we're generating the query, but, how about where we're
+*handling* the query? seems like it's all under `core/schema/handler.go`
