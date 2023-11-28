@@ -100,3 +100,13 @@ e.g.:
 ```
 docker run -it --privileged --rm --pid=container:dagger-engine.dev a attach 1
 ```
+
+note3.: if you're interested in the communication taking place between a client
+and dagger session (e.g., to inspect the `gql` queries taking place), it's
+useful to leverage `httpdump`: 
+
+```
+sudo `which httpdump` -device lo -level all
+```
+
+see https://github.com/hsiafan/httpdump
